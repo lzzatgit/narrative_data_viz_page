@@ -1,0 +1,505 @@
+<html>
+<title>COVID-19 Cases and Deaths</title>
+<script src='https://d3js.org/d3.v5.min.js'></script>
+<script src="https://rawgit.com/susielu/d3-annotation/master/d3-annotation.min.js"></script>
+<style>
+  .tooltip {
+    position: absolute;
+    background-color: white;
+    border: 1px solid #ddd;
+    padding: 5px;
+    font-size: 12px;
+    pointer-events: none;
+    z-index: 10;
+    opacity: 0;
+  }
+</style>
+<style>
+    /* add this to your existing styles */
+    #textDiv h2 {
+        text-align: center;
+    }
+</style>
+<body onload='init()'>
+    <h1>COVID-19 Cases and Deaths</h1>
+    <div style="position: relative;">
+        <svg id="lineChart" width="800" height="400" style="position: absolute; top: 0; left: 0;"></svg>
+        <svg id="barChart" width="800" height="400" style="position: absolute; top: 420px; left: 0;"></svg>
+        <svg id="pieChart" width="500" height="400" style="position: absolute; top: 40; left: 800px;"></svg>
+    </div>
+    <div id="textDiv" style="position: absolute; top: 420px; left: 800px; width: 500px; height: 360px;  border: 1px solid black; padding: 10px;"></div>
+<script>
+    var selectedRegion = null;
+    var allData = null;
+    var colorMapping = {
+        "south": "steelblue",
+        "midwest": "orange",
+        "west": "darkgreen",
+        "northeast": "red"
+    };
+
+    async function init() {
+        const data = await d3.csv('https://raw.githubusercontent.com/lzzatgit/narrative_data_viz/main/covid-us-state.csv');
+
+        data.forEach(function(d) {
+            var parseTime = d3.timeParse("%Y-%m");
+            d.date = parseTime(d.year_month);
+        });
+
+        const southData = data.filter(d => d.region === 'South');
+        const midwestData = data.filter(d => d.region === 'Midwest');
+        const westData = data.filter(d => d.region === 'West');
+        const northeastData = data.filter(d => d.region === 'Northeast');
+
+        allData = data; // Store all data for later use
+
+        const width = 700;
+        const height = 300;
+        const margin = 50;
+
+        var x = d3.scaleTime().domain(d3.extent(southData, d => d.date)).range([0, width]);
+
+        var y = d3.scaleLinear().domain([0, d3.max(data, d => +d.death_rate)]).range([height, 0]);
+
+        var line = d3.line()
+            .x(function(d) { return x(d.date); }) 
+            .y(function(d) { return y(+d.death_rate); })
+
+        var svgLine = d3.select('#lineChart');
+
+        svgLine.append("text") // Append text element to the svgLine
+            .attr("x", margin)  // Set the x position of the text
+            .attr("y", 0)  // Set the y position of the text
+            .style("font-size", "16px") // Set the font size
+            .style("font-weight", "bold") // Set the font weight
+            .text("Line Chart Title"); // The title of the chart
+
+        var gSouth = svgLine.append("g").attr("transform", "translate("+margin+","+margin+")");
+        var gMidwest = svgLine.append("g").attr("transform", "translate("+margin+","+margin+")");
+        var gWest = svgLine.append("g").attr("transform", "translate("+margin+","+margin+")");
+        var gNortheast = svgLine.append("g").attr("transform", "translate("+margin+","+margin+")");
+
+        drawLineAndCircles(gSouth, southData, colorMapping["south"], "south");
+        drawLineAndCircles(gMidwest, midwestData, colorMapping["midwest"], "midwest");
+        drawLineAndCircles(gWest, westData, colorMapping["west"], "west");
+        drawLineAndCircles(gNortheast, northeastData, colorMapping["northeast"], "northeast");
+
+        point1_map = {
+            "default": "<li>Death Rate of all regions have pretty similar trend. " +
+                       "They all went through a sharp increase at the beginning of the pandemic and then decreased as " + 
+                       "more people got immunization through vaccination or recover from the infection.</li>",
+            "south": "<li>The south region has the largest total number of cases while lowest overall death rate.</li>",
+            "midwest": "<li>The midwest region's death rate increased the most from Mar 2020 to Apr 2020.</li>",
+            "west": "<li>At the very beginning of the pandemic, the west region's death rate increases the fastest. " + 
+                    "It reached 3% in Mar 2020. This may be because there are a lot of international travelers that carried " +
+                    "the virus and the virus got spread in the west coast the earliest and the most at the beginning.</li>",
+            "northeast": "<li>The northeast region has the overall highest death rate. " + 
+                         "It has much higher death rate at the beginning of the pandemic, " +
+                         "which can be as high as 8% while the other regions are all around 4%-5%. " + 
+                         "This may related to its high population density.</li>"
+        };
+        point2_map = {
+            "default": "<li>The South region has the most covid positive cases (29%) while midwest has the least total cases (22%).</li>",
+            "south": "<li>The south region's monthly new cases is nearly the same as the whole country's trend. It has 3 obvious peaks.</li>",
+            "midwest": "<li>Generally the midwest region follows the same trend in the number of monthly new cases as the whole country.</li>",
+            "west": "<li>The west region has the nearly lowest number of cases and lowest overall death rate.</li>",
+            "northeast": "<li>The peak of death rate in northeast region arose later than the other regions. " +
+                         "Its death rate reached peak at Jul 2020 while others started to decrease at May 2020.</li>"
+        };
+        point3_map = {
+            "default": "<li>There are 3 peaks in the bar chart where each bar represents the monthly new cases for the United States. " + 
+                       "They correspond to 2020 end of year holiday season where peopoe travel a lot, the Delta variant spread and Ominicron variant spread. " + 
+                       "The Delta variant has higher death rate while the Ominicron variant is famous for fast spreading. So we see higher bar at the Jan 2022 than Sept 2021.</li>",
+            "south": "",
+            "midwest": "",
+            "west": "<li>Generally the west region follows the same trend in the number of monthly new cases as the whole country.</li>",
+            "northeast": "<li>Generally the northeast region follows the same trend in the number of monthly new cases as the whole country. But the Delta variant peak was more gental.</li>"
+        };
+        content_map = {
+            "default": "<ul>" + point1_map["default"] + point2_map["default"] + point3_map["default"] + "<li>And that also explaied why all the regions showed decrease in death rate after the pandemic</li>" +"</ul>",
+            "south": "<ul>" + point1_map["south"] + point2_map["south"] + point3_map["south"] +"</ul>",
+            "midwest": "<ul>" + point1_map["midwest"] + point2_map["midwest"] + point3_map["midwest"] +"</ul>",
+            "west":"<ul>" + point1_map["west"] + point2_map["west"] + point3_map["west"] +"</ul>",
+            "northeast": "<ul>" + point1_map["northeast"] + point2_map["northeast"] + point3_map["northeast"] +"</ul>"
+        };
+
+        var title_default = '<h2>Overview</h2>';
+        var content_default = content_map["default"];
+        document.getElementById('textDiv').innerHTML = title_default + content_map["default"];
+
+        function drawLineAndCircles(g, data, color, regionClass) {
+            var tooltip = d3.select("body")
+                .append("div")
+                .attr("class", "tooltip")
+                .style("opacity", 0);
+
+            g.append("path")
+                .datum(data)
+                .attr("fill", "none")
+                .attr("stroke", color)
+                .attr("stroke-width", 10)  // make the clickable area of the line larger
+                .attr("stroke-opacity", 0)  // make the larger clickable area invisible
+                .attr("d", line)
+                .attr("class", "line " + regionClass)
+                .on('click', function() {
+                    if (selectedRegion === regionClass) {
+                        selectedRegion = null;
+                        d3.selectAll(".line").style("opacity", 1);
+                        d3.selectAll(".circle").style("opacity", 1);
+                        updateBarChart(allData, null);  // pass all data when no region is selected
+                        document.getElementById('textDiv').innerHTML = title_default + content_default;
+                    } else {
+                        selectedRegion = regionClass;
+                        d3.selectAll(".line").style("opacity", 0.1);
+                        d3.selectAll(".circle").style("opacity", 0.1);
+                        d3.selectAll("." + regionClass).style("opacity", 1);
+                        updateBarChart(data, regionClass);
+                        var title_selected = '<h2> ' + regionClass + ' </h2>';
+                        var content_selected = content_map[regionClass];
+                        document.getElementById('textDiv').innerHTML = title_selected + content_selected;
+                    }
+                });
+
+            g.append("path")
+                .datum(data)
+                .attr("fill", "none")
+                .attr("stroke", color)
+                .attr("stroke-width", 1.5)
+                .attr("d", line)
+                .attr("class", "line " + regionClass);
+
+            g.selectAll(".circle-overlay")  // select the invisible circle overlays
+                .data(data)
+                .enter()
+                .append("circle")
+                .attr("cx", function(d, i) { return x(d.date); })
+                .attr("cy", function(d) { return y(+d.death_rate); })
+                .attr("r", 6)  // make the clickable area of the circle larger
+                .attr("fill-opacity", 0)  // make the larger clickable area invisible
+                .attr("class", "circle-overlay " + regionClass)
+                .on('mouseover', function(d) {
+                    tooltip.transition().duration(200).style("opacity", .9).attr('r', 20);
+                    tooltip.html(d3.timeFormat("%Y-%m")(d.date))
+                        .style("left", (d3.event.pageX + 10) + "px")
+                        .style("top", (d3.event.pageY - 20) + "px");
+                })
+                .on('mouseout', function(d) {
+                    tooltip.transition().duration(500).style("opacity", 0).attr('r', 10);
+                });
+
+            g.selectAll(".circle-visible")  // select the visible circles
+                .data(data)
+                .enter()
+                .append("circle")
+                .attr("cx", function(d) { return x(d.date); })
+                .attr("cy", function(d) { return y(+d.death_rate); })
+                .attr("r", 3)
+                .attr("fill", color)
+                .attr("class", "circle " + regionClass);
+        }
+
+        svgLine.append("g")
+            .attr("transform","translate("+margin+","+margin+")")
+            .call(d3.axisLeft(y).ticks(5));
+
+        svgLine.append("g")
+            .attr("transform","translate("+margin+","+(height+margin)+")")
+            .call(d3.axisBottom(x).ticks(d3.timeMonth.every(1)).tickFormat(d3.timeFormat("%Y-%m")))
+            .selectAll("text")
+            .attr("transform", "rotate(290)")
+            .attr('dx', '-2.8em')
+            .attr('dy', '-0.4em');
+
+        // Draw the bar chart
+        var barSvg = d3.select("#barChart");
+        var barMargin = {top: 20, right: 20, bottom: 30, left: 50};
+        var barWidth = width;
+        var barHeight = height;
+
+        var xBar = d3.scaleBand().range([0, barWidth]).padding(0.1);
+        var yBar = d3.scaleLinear().range([barHeight, 0]);
+
+        var gBar = barSvg.append("g")
+            .attr("transform", "translate(" + barMargin.left + "," + barMargin.top + ")");
+
+        gBar.append("g")
+            .attr("class", "x axis")
+            .attr("transform", "translate(0," + barHeight + ")");
+
+        gBar.append("g")
+            .attr("class", "y axis");
+
+        updateBarChart(allData, null);  // pass all data to draw initial bar chart
+
+        function updateBarChart(data, selectedRegion) {
+            var totalCases = d3.nest()
+                .key(function(d) { return d.month_index; })
+                .rollup(function(v) { return d3.sum(v, function(d) { return +d.new_cases; }); })
+                .entries(allData);
+
+            var regionCases = selectedRegion ? d3.nest()
+                .key(function(d) { return d.month_index; })
+                .rollup(function(v) { return d3.sum(v, function(d) { return +d.new_cases; }); })
+                .entries(data) : [];
+
+            xBar.domain(totalCases.map(function(d) { return d.key; }));
+            yBar.domain([0, d3.max(totalCases, function(d) { return d.value; })]);
+
+            gBar.selectAll(".bar-total").remove();
+            gBar.selectAll(".bar-region").remove();
+
+            gBar.selectAll(".bar-total")
+                .data(totalCases)
+                .enter().append("rect")
+                .attr("class", "bar-total")
+                .attr("x", function(d) { return xBar(d.key); })
+                .attr("y", function(d) { return yBar(d.value); })
+                .attr("width", xBar.bandwidth())
+                .attr("height", function(d) { return barHeight - yBar(d.value); })
+                .attr("fill", "lightgray");
+
+            if (selectedRegion) {
+                gBar.selectAll(".bar-region")
+                    .data(regionCases)
+                    .enter().append("rect")
+                    .attr("class", "bar-region")
+                    .attr("x", function(d) { return xBar(d.key); })
+                    .attr("y", function(d) { return yBar(d.value); })
+                    .attr("width", xBar.bandwidth())
+                    .attr("height", function(d) { return barHeight - yBar(d.value); })
+                    .attr("fill", colorMapping[selectedRegion]);
+            }
+
+            gBar.selectAll(".bar-label-total").remove();
+            gBar.selectAll(".bar-label-region").remove();
+
+            var barLabels = gBar.selectAll(".bar-label-total")
+                .data(totalCases)
+                .enter()
+                .append("text")
+                .attr("class", "bar-label-total")
+                .attr("x", function(d) { return xBar(d.key) + xBar.bandwidth() / 2; })
+                .attr("y", function(d) { return yBar(d.value) - 5; })  // Adjust the position of the label above the bar
+                .attr("text-anchor", "middle")
+                .style("font-size", "10px")  // Set the font size directly as an inline style
+                .text(function(d) { return d3.format(".2s")(d.value); })  // Format the value in millions
+                .attr("fill", "black");
+
+            // Add text labels to the region bars
+            if (selectedRegion) {
+                var regionLabels = gBar.selectAll(".bar-label-region")
+                    .data(regionCases)
+                    .enter()
+                    .append("text")
+                    .attr("class", "bar-label-region")
+                    .attr("x", function(d) { return xBar(d.key) + xBar.bandwidth() / 2; })
+                    .attr("y", function(d) { return yBar(d.value) - 5; })  // Adjust the position of the label above the bar
+                    .attr("text-anchor", "middle")
+                    .style("font-size", "10px")  // Set the font size directly as an inline style
+                    .text(function(d) { return d3.format(".2s")(d.value); })  // Format the value in millions
+                    .attr("fill", "black");
+            }
+            // Add annotations
+            var anno1 = [
+                {
+                    note: {
+                    label: "Holiday Season Spread",
+                    title: "Nov 2020 - Jan 2021",
+                    align: "right",  
+                    wrap: 180,  
+                    padding: 0   
+                    },
+                    type: d3.annotationCalloutCircle,
+                        subject: {
+                            radius: 40,         
+                            radiusPadding: 1   
+                    },
+                    x: xBar(12),
+                    y: barHeight / 2 + 40,
+                    dy: -60,
+                    dx: -20
+                }
+                ]
+                
+                var anno2 = [
+                {
+                    note: {
+                    label: "Delta Spread",
+                    title: "Aug 2021 - Oct 2021",
+                    align: "right",  
+                    wrap: 130,  
+                    padding: 0   
+                    },
+                    type: d3.annotationCalloutCircle,
+                        subject: {
+                            radius: 30     
+                    },
+                    x: xBar(21),
+                    y: barHeight / 2 + 80,
+                    dy: -40,
+                    dx: -2
+                }
+                ]
+
+                var anno3 = [
+                {
+                    note: {
+                    label: "Ominicron Spread",
+                    title: "Jan 2022 - Feb 2022",
+                    align: "right",  
+                    wrap: 200,  
+                    padding: 0   
+                    },
+                    type: d3.annotationCalloutCircle,
+                        subject: {
+                            radius: 40,         
+                            radiusPadding: 1   
+                    },
+                    x: xBar(25),
+                    y: barHeight / 2 - 100,
+                    dy: -30,
+                    dx: -60
+                }
+                ]
+
+                var makeAnno1 = d3.annotation().annotations(anno1)
+                var makeAnno2 = d3.annotation().annotations(anno2)
+                var makeAnno3 = d3.annotation().annotations(anno3)
+                gBar.append("g").call(makeAnno1).style("font-size", "11px");
+                gBar.append("g").call(makeAnno2).style("font-size", "11px");
+                gBar.append("g").call(makeAnno3).style("font-size", "11px");
+        }
+        var xLabelMapping = {1: '2020-1',
+                            2: '2020-2',
+                            3: '2020-3',
+                            4: '2020-4',
+                            5: '2020-5',
+                            6: '2020-6',
+                            7: '2020-7',
+                            8: '2020-8',
+                            9: '2020-9',
+                            10: '2020-10',
+                            11: '2020-11',
+                            12: '2020-12',
+                            13: '2021-1',
+                            14: '2021-2',
+                            15: '2021-3',
+                            16: '2021-4',
+                            17: '2021-5',
+                            18: '2021-6',
+                            19: '2021-7',
+                            20: '2021-8',
+                            21: '2021-9',
+                            22: '2021-10',
+                            23: '2021-11',
+                            24: '2021-12',
+                            25: '2022-1',
+                            26: '2022-2',
+                            27: '2022-3',
+                            28: '2022-4',
+                            29: '2022-5',
+                            30: '2022-6',
+                            31: '2022-7',
+                            32: '2022-8',
+                            33: '2022-9',
+                            34: '2022-10',
+                            35: '2022-11',
+                            36: '2022-12'};
+
+        gBar.select(".x.axis")
+            .call(d3.axisBottom(xBar).tickFormat(function(d) { return xLabelMapping[d]; }))
+            .selectAll("text")
+            .attr("transform", "rotate(290)")
+            .attr('dx', '-2.8em')
+            .attr('dy', '-0.4em');
+
+        gBar.select(".y.axis")
+            .call(d3.axisLeft(yBar).ticks(5).tickFormat(d3.format(".0s")));  // Use tickFormat to format the y-axis labels
+
+        // Add y-axis label for line chart
+        svgLine.append("text")
+            .attr("x", -height / 2 - 50)
+            .attr("y", 15) // Adjust the position above the y-axis
+            .attr("text-anchor", "middle")
+            .attr("fill", "black")
+            .attr("font-size", "14px")
+            .attr("transform", "rotate(-90)")
+            .text("Death Rate (%)");
+
+        // Add y-axis label for bar chart
+        gBar.append("text")
+            .attr("x", -(barHeight / 2))
+            .attr("y", -35) // Adjust the position above the y-axis
+            .attr("text-anchor", "middle")
+            .attr("fill", "black")
+            .attr("font-size", "14px")
+            .attr("transform", "rotate(-90)")
+            .text("New Cases (Millions)");
+
+
+        // Draw the pie chart
+        var pieSvg = d3.select("#pieChart");
+        var pieMargin = 20;
+        var pieWidth = 300 - pieMargin * 2;
+        var pieHeight = 300 - pieMargin * 2;
+        var radius = Math.min(pieWidth, pieHeight) / 2;
+
+        var g = pieSvg.append("g")
+            .attr("transform", "translate(" + pieWidth / 2 + "," + pieHeight / 2 + ")");
+
+        var color = d3.scaleOrdinal()
+            .range(["steelblue", "orange", "darkgreen", "red"]);
+
+        var pie = d3.pie()
+            .sort(null)
+            .value(function(d) { return d.total_deaths; });
+
+        var path = d3.arc()
+            .outerRadius(radius)
+            .innerRadius(0);
+
+        var label = d3.arc()
+            .outerRadius(radius)
+            .innerRadius(radius - 80);
+
+        var regions = ["south", "midwest", "west", "northeast"];
+        var totalNewCases = regions.map(region => {
+            var regionData = data.filter(d => d.region === region.charAt(0).toUpperCase() + region.slice(1));
+            var totalNewCases = d3.sum(regionData, d => +d.new_cases);
+            return {region: region, total_deaths: totalNewCases};
+        });
+
+        var totalDeathCount = d3.sum(totalNewCases, d => d.total_deaths);
+
+        var arc = g.selectAll(".arc")
+            .data(pie(totalNewCases))
+            .enter().append("g")
+            .attr("class", d => "arc " + d.data.region);
+
+        arc.append("path")
+            .attr("d", path)
+            .attr("fill", d => color(d.data.region))
+            .attr("class", d => "pie " + d.data.region);
+
+        arc.append("text")
+        .attr("transform", function(d) { 
+                var centroid = label.centroid(d); 
+                return "translate(" + (centroid[0] - 20) + "," + centroid[1] + ")"; 
+            })
+            .attr("dy", "0.35em")
+            .attr("font-size", "14px")
+            .text(d => d.data.region + ": " + Math.round(d.data.total_deaths / totalDeathCount * 100) + "%");
+
+        // Add x-axis label for bar chart
+        pieSvg.append("text")
+            .attr("x", pieWidth / 2)
+            .attr("y", pieHeight + pieMargin + 20) // Adjust the position below the x-axis
+            .attr("text-anchor", "middle")
+            .attr("fill", "black")
+            .attr("font-size", "14px")
+            .text("Total Cases Percentage");
+
+    }
+</script>
+</body>
+</html>
